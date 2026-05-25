@@ -7,7 +7,11 @@ export class TelemetryService {
   private redis: Redis;
 
   constructor() {
-    this.redis = new Redis({ host: 'localhost', port: 6379, keyPrefix: 'telemetry:' });
+    this.redis = new Redis({
+      host: 'localhost',
+      port: 6379,
+      keyPrefix: 'telemetry:',
+    });
   }
 
   async queuePositions(payload: any[]) {
@@ -16,7 +20,7 @@ export class TelemetryService {
 
     for (let i = 0; i < payload.length; i += batchSize) {
       const batch = payload.slice(i, i + batchSize);
-      const data = batch.map(p => ({
+      const data = batch.map((p) => ({
         tenant_id: 'default-tenant', // substituir por lookup por device_id em prod
         device_id: String(p.device_id || p.deviceId),
         ts: new Date(p.fixtime || p.timestamp).toISOString(),
