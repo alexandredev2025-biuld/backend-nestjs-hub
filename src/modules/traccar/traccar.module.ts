@@ -7,6 +7,6 @@ import { TraccarSocketClient } from './traccar.client';
 @Module({
   controllers: [TraccarController],
   providers: [TraccarService, TraccarGateway, TraccarSocketClient],
-  exports: [TraccarGateway],
+  exports: [TraccarService, TraccarGateway],
 })
 export class TraccarModule {}

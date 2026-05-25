@@ -61,7 +61,17 @@ export class TraccarService implements OnModuleInit {
       return this.request(path, options);
     }
 
-    return res.json();
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Traccar ${path} respondeu ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return res.json();
+    }
+
+    return null;
   }
 
   getSessionCookie(): string {
@@ -93,5 +103,12 @@ export class TraccarService implements OnModuleInit {
     params.append('from', from || '2026-01-01T00:00:00Z');
     params.append('to', to || new Date().toISOString());
     return this.request(`/reports/events?${params.toString()}`);
+  }
+
+  async createDevice(name: string, uniqueId: string): Promise<any> {
+    return this.request('/devices', {
+      method: 'POST',
+      body: JSON.stringify({ name, uniqueId }),
+    });
   }
 }

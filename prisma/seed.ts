@@ -40,6 +40,8 @@ async function main() {
       model TEXT,
       status TEXT NOT NULL DEFAULT 'AVAILABLE',
       "tenantId" UUID NOT NULL REFERENCES "Tenant"(id),
+      "traccarDeviceId" INTEGER,
+      "traccarSyncStatus" TEXT NOT NULL DEFAULT 'PENDING',
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -70,6 +72,12 @@ async function main() {
       server_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE "Vehicle"
+      ADD COLUMN IF NOT EXISTS "traccarDeviceId" INTEGER,
+      ADD COLUMN IF NOT EXISTS "traccarSyncStatus" TEXT NOT NULL DEFAULT 'PENDING';
   `);
 
   console.log('Limpando dados existentes...');

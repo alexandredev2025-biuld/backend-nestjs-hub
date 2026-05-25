@@ -161,9 +161,11 @@ Genesis ITS (Hub)
 |---|---|---|---|
 | `GET` | `/v1/vehicles` | Todos | Listar veículos **do seu tenant** |
 | `GET` | `/v1/vehicles/:id` | Todos | Detalhe do veículo |
-| `POST` | `/v1/vehicles` | MASTER, ADMIN | Criar veículo |
+| `POST` | `/v1/vehicles` | MASTER, ADMIN | Criar veículo (tenta sincronizar com Traccar) |
 | `PATCH` | `/v1/vehicles/:id` | MASTER, ADMIN | Atualizar veículo |
 | `DELETE` | `/v1/vehicles/:id` | MASTER | Remover veículo |
+| `POST` | `/v1/vehicles/:id/sync-traccar` | MASTER, ADMIN | Sincronizar veículo pendente com o Traccar |
+| `POST` | `/v1/vehicles/sync-all/pending` | MASTER, ADMIN | Sincronizar **todos** os pendentes/falhos |
 
 **POST /v1/vehicles**
 ```json
@@ -174,9 +176,158 @@ Genesis ITS (Hub)
 }
 ```
 
-**Status disponíveis:** `AVAILABLE` | `IN_OPERATION` | `MAINTENANCE` | `OFFLINE`
+**Resposta (201 — sucesso):**
+```json
+{
+  "id": "uuid",
+  "plate": "ABC-1A23",
+  "model": "Marcopolo Paradiso",
+  "status": "AVAILABLE",
+  "traccarDeviceId": 42,
+  "traccarSyncStatus": "SYNCED",
+  "tenantId": "uuid",
+  "createdAt": "2026-05-25T12:00:00.000Z",
+  "updatedAt": "2026-05-25T12:00:00.000Z"
+}
+```
 
-> ⚠️ Todos os veículos são isolados por tenant. O usuário só vê os veículos do seu próprio tenant.
+**Resposta (201 — falha no Traccar, veículo criado mesmo assim):**
+```json
+{
+  "id": "uuid",
+  "plate": "ABC-1A23",
+  "model": "Marcopolo Paradiso",
+  "status": "AVAILABLE",
+  "traccarDeviceId": null,
+  "traccarSyncStatus": "PENDING",
+  "tenantId": "uuid",
+  "createdAt": "2026-05-25T12:00:00.000Z",
+  "updatedAt": "2026-05-25T12:00:00.000Z"
+}
+```
+
+**POST /v1/vehicles/:id/sync-traccar**
+Sincroniza um veículo específico que ficou `PENDING` ou `FAILED`:
+```json
+// 200 OK
+{
+  "id": "uuid",
+  "plate": "ABC-1A23",
+  "traccarDeviceId": 42,
+  "traccarSyncStatus": "SYNCED",
+  ...
+}
+```
+
+**POST /v1/vehicles/sync-all/pending**
+Sincroniza **todos** os veículos com `traccarSyncStatus` diferente de `SYNCED`:
+```json
+// 200 OK
+{
+  "synced": 2,
+  "failed": 1,
+  "details": [
+    { "id": "uuid", "plate": "ABC-1A23", "success": true },
+    { "id": "uuid", "plate": "DEF-4B56", "success": true },
+    { "id": "uuid", "plate": "GHI-7C89", "success": false, "error": "Erro de conexão" }
+  ]
+}
+```
+
+**Status disponíveis do veículo:** `AVAILABLE` | `IN_OPERATION` | `MAINTENANCE` | `OFFLINE`
+
+**Status de sincronização Traccar:** `PENDING` | `SYNCED` | `FAILED`
+
+> ⚠️ Veículos são isolados por tenant. Ao criar, o backend tenta cadastrar automaticamente no Traccar. Se falhar (ex.: Traccar offline), o veículo fica com `traccarSyncStatus: 'PENDING'` e pode ser sincronizado depois via `POST /v1/vehicles/:id/sync-traccar` ou em lote via `POST /v1/vehicles/sync-all/pending`.
+
+---
+
+### Integração frontend — Fluxo de cadastro de veículo
+
+1. **Criar veículo:** `POST /v1/vehicles` → recebe `traccarSyncStatus`
+2. **Exibir status na lista/tabela:**
+
+| `traccarSyncStatus` | Significado | Ação no frontend |
+|---|---|---|
+| `SYNCED` | ✅ Rastreamento ativo | Mostrar badge verde. Veículo aparece no mapa. |
+| `PENDING` | ⏳ Aguardando sync | Mostrar badge amarelo + botão "Sincronizar" |
+| `FAILED` | ❌ Sync falhou | Mostrar badge vermelho + botão "Tentar novamente" |
+
+3. **Sincronizar um veículo:** `POST /v1/vehicles/:id/sync-traccar` → retorna o veículo atualizado com `traccarDeviceId` e `traccarSyncStatus: 'SYNCED'`
+4. **Sincronizar todos pendentes:** `POST /v1/vehicles/sync-all/pending` → retorna resumo com contagem de sucessos/falhas
+
+**Telas sugeridas:**
+
+- **Tela de frota (lista):** coluna "Rastreamento" com badge colorido (verde/amarelo/vermelho). Se não for `SYNCED`, exibir botão "🔄 Sincronizar".
+- **Tela de detalhe do veículo:** exibir `traccarDeviceId` e status de rastreamento. Botão para sincronizar se estiver pendente.
+- **Tela do mapa:** **apenas** veículos com `traccarSyncStatus: 'SYNCED` devem aparecer no mapa.
+- **Após sync bem-sucedido:** o veículo passa a aparecer nos endpoints de proxy do Traccar (`/v1/traccar/devices`, `/v1/traccar/positions`) e começa a emitir eventos em tempo real via Socket.IO.
+
+**Exemplo de implementação React:**
+```tsx
+function VehicleRow({ vehicle }: { vehicle: Vehicle }) {
+  const [syncing, setSyncing] = useState(false);
+
+  async function handleSync() {
+    setSyncing(true);
+    await fetch(`/v1/vehicles/${vehicle.id}/sync-traccar`, {
+      headers: { Authorization: `Bearer ${token}` },
+      method: 'POST',
+    });
+    setSyncing(false);
+    // recarregar lista
+  }
+
+  const badge = {
+    SYNCED:  <span className="badge badge-success">🟢 Sincronizado</span>,
+    PENDING: <span className="badge badge-warning">🟡 Pendente</span>,
+    FAILED:  <span className="badge badge-error">🔴 Falhou</span>,
+  };
+
+  return (
+    <tr>
+      <td>{vehicle.plate}</td>
+      <td>{badge[vehicle.traccarSyncStatus]}</td>
+      <td>{vehicle.traccarDeviceId ?? '—'}</td>
+      <td>
+        {vehicle.traccarSyncStatus !== 'SYNCED' && (
+          <button onClick={handleSync} disabled={syncing}>
+            {syncing ? 'Sincronizando...' : '🔄 Sincronizar'}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+```
+
+### Integração frontend — Tempo real no mapa
+
+1. Conectar no Socket.IO (`/realtime`) após o login
+2. Escutar evento `position` → atualizar marcador no mapa
+3. Escutar evento `device:status` → atualizar badge online/offline
+4. **Veículos com `traccarSyncStatus: 'PENDING'` ou `'FAILED'` não recebem posições** — o mapa só deve exibir veículos `SYNCED`
+
+```tsx
+// Hook React para tempo real
+function useRealtimePositions() {
+  const [positions, setPositions] = useState<Map<number, Position>>(new Map());
+
+  useEffect(() => {
+    const socket = io('http://localhost:3000/realtime', {
+      auth: { token: `Bearer ${jwt}` },
+    });
+
+    socket.on('position', (pos: Position) => {
+      setPositions((prev) => new Map(prev).set(pos.deviceId, pos));
+    });
+
+    return () => { socket.disconnect(); };
+  }, []);
+
+  return positions;
+}
+```
 
 ### Rotas (exclusivo OtimiBus)
 
@@ -200,12 +351,55 @@ Authorization: Bearer <token_otimibus>
 
 > ❌ Usuários do **FastTracking** recebem **403 Forbidden** com a mensagem: `"Funcionalidade 'routes:management' não disponível para o produto FAST_TRACKING"`
 
-### Telemetria (Traccar)
+## 🔌 Integração Traccar
+
+### Proxy REST
+
+O backend faz proxy autenticado para a API REST do Traccar. Os endpoints abaixo consomem a sessão do Traccar internamente — o frontend envia apenas o JWT da Genesis.
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `POST` | `/v1/telemetry/traccar/positions` | Ingerir posições GPS |
-| `POST` | `/v1/telemetry/traccar/events` | Ingerir eventos do dispositivo |
+| `GET` | `/v1/traccar/devices` | Listar dispositivos do Traccar |
+| `GET` | `/v1/traccar/devices/:id` | Detalhes de um dispositivo |
+| `GET` | `/v1/traccar/positions` | Últimas posições conhecidas |
+| `GET` | `/v1/traccar/events` | Eventos (requer `from` e `to`) |
+
+**Query params — `/v1/traccar/positions`:**
+| Parâmetro | Tipo | Descrição |
+|---|---|---|
+| `deviceId` | `number[]` | Filtrar por dispositivo (ex: `?deviceId=1&deviceId=2`) |
+
+**Query params — `/v1/traccar/events`:**
+| Parâmetro | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `deviceId` | `number` | não | Filtrar por dispositivo |
+| `from` | `string` (ISO 8601) | não | Início do período (default: 2026-01-01) |
+| `to` | `string` (ISO 8601) | não | Fim do período (default: agora) |
+
+**Exemplos:**
+```bash
+# Listar dispositivos
+GET /v1/traccar/devices
+Authorization: Bearer <jwt>
+
+# Últimas posições dos dispositivos 1 e 2
+GET /v1/traccar/positions?deviceId=1&deviceId=2
+
+# Eventos dos últimos 7 dias
+GET /v1/traccar/events?from=2026-05-18T00:00:00Z&to=2026-05-25T23:59:59Z
+Authorization: Bearer <jwt>
+```
+
+> A sessão com o Traccar é mantida automaticamente pelo backend (cookie `JSESSIONID`). Em caso de 401, o backend re-autentica e tenta novamente.
+
+### Webhook (ingestão)
+
+O próprio Traccar envia eventos e posições para o backend via webhook configurado no `traccar.xml`:
+
+| Método | Rota | Origem |
+|---|---|---|
+| `POST` | `/v1/telemetry/traccar/positions` | Traccar → NestJS (positions.forward) |
+| `POST` | `/v1/telemetry/traccar/events` | Traccar → NestJS (event.forward) |
 
 **POST /v1/telemetry/traccar/positions**
 ```json
@@ -233,6 +427,89 @@ Authorization: Bearer <token_otimibus>
     "serverTime": "2026-05-25T12:00:00Z"
   }
 ]
+```
+
+---
+
+## 📡 Tempo Real (WebSocket + Socket.IO)
+
+### Arquitetura
+
+```
+Dispositivo GPS → Traccar (WS) → NestJS → Socket.IO → Frontend
+                    (nativo)     (ws + cookie)  (/realtime)
+```
+
+O backend se conecta ao WebSocket nativo do Traccar (`ws://traccar:8082/api/socket`) usando o cookie de sessão, e retransmite as mensagens para o frontend via Socket.IO no namespace `/realtime`.
+
+### Socket.IO — Conectar
+
+```js
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000/realtime', {
+  auth: { token: 'Bearer <jwt_da_genesis>' },
+});
+```
+
+### Eventos recebidos
+
+#### `position`
+```json
+{
+  "id": 12345,
+  "deviceId": 1,
+  "latitude": -23.5505,
+  "longitude": -46.6333,
+  "speed": 45.2,
+  "course": 180.0,
+  "altitude": 760,
+  "fixTime": "2026-05-25T12:00:00Z",
+  "ignition": true
+}
+```
+
+#### `event`
+```json
+{
+  "id": 67890,
+  "deviceId": 1,
+  "type": "deviceOnline",
+  "positionId": 12345,
+  "geofenceId": null,
+  "attributes": { "battery": 95 },
+  "serverTime": "2026-05-25T12:00:00Z"
+}
+```
+
+#### `device:status`
+```json
+{
+  "id": 1,
+  "name": "Ônibus 101",
+  "uniqueId": "1234567890",
+  "status": "online",
+  "lastUpdate": "2026-05-25T12:00:00Z"
+}
+```
+
+### Exemplo frontend
+
+```js
+socket.on('position', (pos) => {
+  // atualizar marcador no mapa
+  map.flyTo({ center: [pos.longitude, pos.latitude] });
+});
+
+socket.on('event', (evt) => {
+  // mostrar notificação
+  notify({ title: evt.type, body: `Dispositivo ${evt.deviceId}` });
+});
+
+socket.on('device:status', (dev) => {
+  // atualizar indicador online/offline
+  updateDeviceStatus(dev.id, dev.status);
+});
 ```
 
 ---
@@ -330,8 +607,7 @@ docker compose up -d
 ## 🔜 Próximas funcionalidades
 
 - [ ] Gestão de usuários (CRUD)
-- [ ] Histórico de posições (timescale)
+- [ ] Histórico de posições (TimescaleDB)
 - [ ] Geofences / alertas
 - [ ] Relatórios
-- [ ] WebSocket para posições em tempo real
 - [ ] Endpoints específicos FastTracking (entregas)

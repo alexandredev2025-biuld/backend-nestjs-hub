@@ -31,7 +31,7 @@ export class VehiclesController {
 
   @Post()
   @Roles('MASTER', 'ADMIN')
-  @ApiOperation({ summary: 'Criar veículo' })
+  @ApiOperation({ summary: 'Criar veículo (tenta sincronizar com Traccar)' })
   @ApiResponse({ status: 409, description: 'Placa já cadastrada' })
   create(@Body() dto: CreateVehicleDto, @CurrentUser() user: any) {
     return this.vehiclesService.create(user.tenantId, dto);
@@ -55,5 +55,21 @@ export class VehiclesController {
   async remove(@Param('id') id: string, @CurrentUser() user: any) {
     await this.vehiclesService.remove(user.tenantId, id);
     return { message: 'Veículo removido' };
+  }
+
+  @Post(':id/sync-traccar')
+  @Roles('MASTER', 'ADMIN')
+  @ApiOperation({ summary: 'Sincronizar veículo pendente/falho com o Traccar' })
+  @ApiResponse({ status: 200, description: 'Sincronizado com sucesso' })
+  @ApiResponse({ status: 404, description: 'Veículo não encontrado' })
+  syncToTraccar(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.vehiclesService.syncToTraccar(id, user.tenantId);
+  }
+
+  @Post('sync-all/pending')
+  @Roles('MASTER', 'ADMIN')
+  @ApiOperation({ summary: 'Sincronizar todos os veículos pendentes/falhos com o Traccar' })
+  syncAllPending(@CurrentUser() user: any) {
+    return this.vehiclesService.syncAllPending(user.tenantId);
   }
 }
