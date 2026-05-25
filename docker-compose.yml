@@ -1,0 +1,50 @@
+version: "3.8"
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: transport-postgres
+    environment:
+      POSTGRES_USER: transport_dev
+      POSTGRES_PASSWORD: dev_secret_123
+      POSTGRES_DB: transport_core
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports: ["5432:5432"]
+    volumes:
+      - ./init-db:/docker-entrypoint-initdb.d:ro  # :ro = read-only (evita permissão)
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transport_dev -d transport_core"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s  # Dá 30s para o initdb rodar antes de checar health
+
+  redis:
+    image: redis:7-alpine
+    container_name: transport-redis
+    ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  traccar:
+    image: traccar/traccar:latest
+    container_name: transport-traccar
+    ports:
+      - "8082:8082"
+      - "5000-5199:5000-5199"
+    volumes:
+      - ./traccar-config:/opt/traccar/conf:ro
+    environment:
+      TRACCAR_DATABASE: postgresql
+      TRACCAR_DATABASE_URL: jdbc:postgresql://host.docker.internal:5432/transport_traccar
+      TRACCAR_DATABASE_USER: transport_dev
+      TRACCAR_DATABASE_PASSWORD: dev_secret_123
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+
+volumes:
+  pg_data:
+  redis_data:

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+  <entry key='event.forward.enable'>true</entry>
+  <entry key='event.forward.url'>http://host.docker.internal:3000/v1/telemetry/traccar/events</entry>
+  <entry key='positions.forward.enable'>true</entry>
+  <entry key='positions.forward.url'>http://host.docker.internal:3000/v1/telemetry/traccar/positions</entry>
+  <entry key='positions.forward.json'>true</entry>
+  <entry key='positions.forward.json.timestamp'>true</entry>
+<!--   <entry key='positions.forward.json.ignore'>speed,course,altitude</entry>
+  <entry key='positions.forward.json.include'>device_id,latitude,longitude,fixtime,ignition</entry> -->
+</properties>
