@@ -32,14 +32,22 @@ export class TelemetryConsumer implements OnModuleInit {
       await this.redis.connect();
       await this.ensureStream();
     } catch (err) {
-      this.logger.warn(`Redis indisponível: ${err.message}. Tentando novamente em 3s...`);
+      this.logger.warn(
+        `Redis indisponível: ${err.message}. Tentando novamente em 3s...`,
+      );
       setTimeout(() => this.onModuleInit(), 3000);
     }
   }
 
   private async ensureStream() {
     try {
-      await this.redis.xgroup('CREATE', this.streamKey, this.group, '0', 'MKSTREAM');
+      await this.redis.xgroup(
+        'CREATE',
+        this.streamKey,
+        this.group,
+        '0',
+        'MKSTREAM',
+      );
       this.logger.log(`Stream ${this.streamKey} e consumer group criados`);
     } catch (err) {
       if (err.message?.includes('BUSYGROUP')) {
@@ -77,7 +85,10 @@ export class TelemetryConsumer implements OnModuleInit {
           return;
         }
 
-        const [, messages] = result[0] as [string, [string, Record<string, string>][]];
+        const [, messages] = result[0] as [
+          string,
+          [string, Record<string, string>][],
+        ];
 
         if (!messages || messages.length === 0) {
           setTimeout(poll, 50);
@@ -90,7 +101,9 @@ export class TelemetryConsumer implements OnModuleInit {
             await this.insertBatch(batch);
             await this.redis.xack(this.streamKey, this.group, id);
           } catch (err) {
-            this.logger.error(`Erro ao processar mensagem ${id}: ${err.message}`);
+            this.logger.error(
+              `Erro ao processar mensagem ${id}: ${err.message}`,
+            );
           }
         }
       } catch (err) {

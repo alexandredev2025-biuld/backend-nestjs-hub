@@ -82,6 +82,7 @@ export class AuthService {
         email: user.email,
         tenantId: user.tenantId,
         role: user.role,
+        product: dto.product,
       });
 
       return {
@@ -128,6 +129,7 @@ export class AuthService {
       email: user.email,
       tenantId: user.tenantId,
       role: user.role,
+      product: user.product,
     });
 
     return {

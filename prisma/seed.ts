@@ -58,6 +58,20 @@ async function main() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_id UUID NOT NULL,
+      device_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      position_id INT,
+      geofence_id INT,
+      attributes JSONB DEFAULT '{}',
+      server_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   console.log('Limpando dados existentes...');
   await pool.query('DELETE FROM positions');
   await pool.query('DELETE FROM "Vehicle"');

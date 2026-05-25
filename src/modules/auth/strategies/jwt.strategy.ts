@@ -9,6 +9,7 @@ type JwtPayload = {
   email: string;
   tenantId: string;
   role: string;
+  product: string;
 };
 
 interface UserRow {
@@ -17,6 +18,7 @@ interface UserRow {
   name: string;
   role: string;
   tenantId: string;
+  product: string;
 }
 
 @Injectable()
@@ -38,7 +40,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: JwtPayload) {
     const { rows } = await this.pool.query<UserRow>(
-      'SELECT id, email, name, role, "tenantId" FROM "User" WHERE id = $1',
+      `SELECT u.id, u.email, u.name, u.role, u."tenantId", t.product
+       FROM "User" u
+       JOIN "Tenant" t ON t.id = u."tenantId"
+       WHERE u.id = $1`,
       [payload.sub],
     );
 
