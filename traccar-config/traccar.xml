@@ -1,12 +1,24 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
 <properties>
+  <!-- Configurações básicas -->
+  <entry key='web.defaultPort'>8082</entry>
+  <entry key='web.debugPort'>5100</entry>
+  
+  <!-- Banco de dados -->
+  <entry key='database.driver'>org.postgresql.Driver</entry>
+  <entry key='database.url'>jdbc:postgresql://host.docker.internal:5432/transport_traccar</entry>
+  <entry key='database.user'>transport_dev</entry>
+  <entry key='database.password'>dev_secret_123</entry>
+  
+  <!-- Forwarding para NestJS -->
   <entry key='event.forward.enable'>true</entry>
   <entry key='event.forward.url'>http://host.docker.internal:3000/v1/telemetry/traccar/events</entry>
   <entry key='positions.forward.enable'>true</entry>
   <entry key='positions.forward.url'>http://host.docker.internal:3000/v1/telemetry/traccar/positions</entry>
   <entry key='positions.forward.json'>true</entry>
-  <entry key='positions.forward.json.timestamp'>true</entry>
-<!--   <entry key='positions.forward.json.ignore'>speed,course,altitude</entry>
-  <entry key='positions.forward.json.include'>device_id,latitude,longitude,fixtime,ignition</entry> -->
+  
+  <!-- Protocolos básicos -->
+  <entry key='filter.enable'>false</entry>
+  <entry key='web.registration'>false</entry>
 </properties>

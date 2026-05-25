@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -17,6 +12,18 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum Product {
+  OTIMIBUS
+  FAST_TRACKING
+}
+
+enum UserRole {
+  MASTER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
 enum VehicleStatus {
   AVAILABLE
   IN_OPERATION
@@ -28,10 +35,25 @@ model Tenant {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
+  product   Product  @default(OTIMIBUS)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   vehicles Vehicle[]
+  users    User[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(VIEWER)
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 }
 
 model Vehicle {

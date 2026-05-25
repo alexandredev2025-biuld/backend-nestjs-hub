@@ -7,61 +7,112 @@ export class TelemetryConsumer implements OnModuleInit {
   private readonly logger = new Logger(TelemetryConsumer.name);
   private redis: Redis;
   private pg: Pool;
-  private readonly streamKey = 'positions:ingest';
+  private readonly streamKey = 'telemetry:positions:ingest';
   private readonly group = 'telemetry-workers';
   private readonly consumer = `worker-${process.pid}`;
+  private started = false;
 
   constructor() {
-    this.redis = new Redis({ host: 'localhost', port: 6379, keyPrefix: 'telemetry:' });
+    this.redis = new Redis({
+      host: 'localhost',
+      port: 6379,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    });
   }
 
   async onModuleInit() {
-    // Injeta o pool via ConfigService ou cria direto (simplificado para dev)
-    this.pg = new Pool({ connectionString: 'postgresql://transport_dev:dev_secret_123@localhost:5432/transport_core' });
-    await this.ensureStreamGroup();
-    this.startPolling();
-  }
+    this.pg = new Pool({
+      connectionString:
+        'postgresql://transport_dev:dev_secret_123@localhost:5432/transport_core',
+    });
 
-  private async ensureStreamGroup() {
     try {
-      await this.redis.xgroup('CREATE', this.streamKey, this.group, '0', 'MKSTREAM');
-    } catch {
-      // Grupo já existe
+      await this.redis.connect();
+      await this.ensureStream();
+    } catch (err) {
+      this.logger.warn(
+        `Redis indisponível: ${err.message}. Tentando novamente em 3s...`,
+      );
+      setTimeout(() => this.onModuleInit(), 3000);
     }
   }
 
-  private startPolling() {
+  private async ensureStream() {
+    try {
+      await this.redis.xgroup(
+        'CREATE',
+        this.streamKey,
+        this.group,
+        '0',
+        'MKSTREAM',
+      );
+      this.logger.log(`Stream ${this.streamKey} e consumer group criados`);
+    } catch (err) {
+      if (err.message?.includes('BUSYGROUP')) {
+        this.logger.log('Consumer group já existe');
+      } else {
+        this.logger.error(`Erro ao criar consumer group: ${err.message}`);
+        return;
+      }
+    }
+
+    this.startConsumer();
+  }
+
+  private startConsumer() {
+    if (this.started) return;
+    this.started = true;
+
     const poll = async () => {
       try {
         const result = await this.redis.xreadgroup(
-          'GROUP', this.group, this.consumer,
-          'COUNT', 500, 'BLOCK', 2000,
-          'STREAMS', this.streamKey, '>',
+          'GROUP',
+          this.group,
+          this.consumer,
+          'COUNT',
+          500,
+          'BLOCK',
+          2000,
+          'STREAMS',
+          this.streamKey,
+          '>',
         );
-  
-        // Tipagem explícita do retorno do Redis
-        if (!result || result.length === 0) return poll();
-  
-        const [streamName, messages] = result[0] as [string, [string, Record<string, string>][]];
-  
-        if (!messages || messages.length === 0) return poll();
-  
+
+        if (!result || result.length === 0) {
+          setTimeout(poll, 50);
+          return;
+        }
+
+        const [, messages] = result[0] as [
+          string,
+          [string, Record<string, string>][],
+        ];
+
+        if (!messages || messages.length === 0) {
+          setTimeout(poll, 50);
+          return;
+        }
+
         for (const [id, data] of messages) {
           try {
-            const batch = JSON.parse(data.data as string);
+            const batch = JSON.parse(data.data);
             await this.insertBatch(batch);
             await this.redis.xack(this.streamKey, this.group, id);
           } catch (err) {
-            this.logger.error(`Erro ao processar stream ${id}: ${err.message}`);
+            this.logger.error(
+              `Erro ao processar mensagem ${id}: ${err.message}`,
+            );
           }
         }
       } catch (err) {
         this.logger.error(`Erro no Redis stream: ${err.message}`);
       }
-  
+
       setTimeout(poll, 50);
     };
-  
+
     poll();
   }
 
@@ -78,13 +129,13 @@ export class TelemetryConsumer implements OnModuleInit {
     `;
 
     await this.pg.query(query, [
-      positions.map(() => '00000000-0000-0000-0000-000000000000'), // tenant padrão
-      positions.map(p => p.device_id),
-      positions.map(p => p.ts),
-      positions.map(p => p.lng),
-      positions.map(p => p.lat),
-      positions.map(p => p.speed),
-      positions.map(p => p.ignition),
+      positions.map(() => '00000000-0000-0000-0000-000000000000'),
+      positions.map((p) => p.device_id),
+      positions.map((p) => p.ts),
+      positions.map((p) => p.lng),
+      positions.map((p) => p.lat),
+      positions.map((p) => p.speed),
+      positions.map((p) => p.ignition),
     ]);
   }
 }
