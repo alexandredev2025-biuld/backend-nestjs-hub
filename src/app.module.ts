@@ -10,6 +10,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CoreModule } from './modules/core/core.module';
 import { FeatureModule } from './shared/features/feature.module';
 import { RoutesModule } from './modules/routes/routes.module';
+import { TraccarModule } from './modules/traccar/traccar.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RoutesModule } from './modules/routes/routes.module';
     FeatureModule,
     CoreModule,
     RoutesModule,
+    TraccarModule,
     TelemetryModule,
   ],
   controllers: [AppController],

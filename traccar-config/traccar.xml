@@ -20,4 +20,5 @@
   
   <!-- Protocolos básicos -->
   <entry key='filter.enable'>false</entry>
+  <entry key='web.registration'>false</entry>
 </properties>
