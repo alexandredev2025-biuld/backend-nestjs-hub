@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 export class TraccarService implements OnModuleInit {
   private readonly logger = new Logger(TraccarService.name);
   private baseUrl: string;
+  private token: string | null = null;
   private cookie = '';
 
   constructor(private config: ConfigService) {
@@ -12,7 +13,12 @@ export class TraccarService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.authenticate();
+    this.token = this.config.get('TRACCAR_TOKEN', null);
+    if (this.token) {
+      this.logger.log('Usando token Traccar para autenticação');
+    } else {
+      await this.authenticate();
+    }
   }
 
   private async authenticate() {
@@ -33,7 +39,7 @@ export class TraccarService implements OnModuleInit {
         const setCookie = res.headers.get('set-cookie');
         if (setCookie) {
           this.cookie = setCookie.split(';')[0];
-          this.logger.log('Autenticado no Traccar API');
+          this.logger.log('Autenticado no Traccar API (email/senha)');
         }
       } else {
         this.logger.error(`Falha na autenticação Traccar: ${res.status}`);
@@ -44,20 +50,30 @@ export class TraccarService implements OnModuleInit {
   }
 
   private async request(path: string, options?: RequestInit) {
-    if (!this.cookie) await this.authenticate();
+    const suffix = this.token ? `?token=${this.token}` : '';
+    if (!this.token && !this.cookie) {
+      await this.authenticate();
+      if (!this.cookie) {
+        throw new Error('Não foi possível autenticar no Traccar — verifique TRACCAR_USER/TRACCAR_PASSWORD');
+      }
+    }
 
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await fetch(`${this.baseUrl}${path}${suffix}`, {
       ...options,
       headers: {
-        Cookie: this.cookie,
+        ...(this.cookie ? { Cookie: this.cookie } : {}),
         Accept: 'application/json',
         'Content-Type': 'application/json',
         ...options?.headers,
       },
     });
 
-    if (res.status === 401) {
+    if (res.status === 401 && !this.token) {
+      this.cookie = '';
       await this.authenticate();
+      if (!this.cookie) {
+        throw new Error('Não foi possível autenticar no Traccar após 401');
+      }
       return this.request(path, options);
     }
 

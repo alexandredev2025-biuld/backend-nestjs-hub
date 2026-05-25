@@ -10,6 +10,7 @@ export class TraccarSocketClient implements OnModuleInit, OnModuleDestroy {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private baseUrl: string;
+  private token: string | null;
 
   constructor(
     private config: ConfigService,
@@ -18,10 +19,15 @@ export class TraccarSocketClient implements OnModuleInit, OnModuleDestroy {
   ) {
     const host = 'localhost';
     const port = this.config.get('TRACCAR_PORT', '8082');
-    this.baseUrl = `ws://${host}:${port}/api/socket`;
+    this.token = this.config.get('TRACCAR_TOKEN', null);
+    const suffix = this.token ? `?token=${this.token}` : '';
+    this.baseUrl = `ws://${host}:${port}/api/socket${suffix}`;
   }
 
   async onModuleInit() {
+    if (!this.token) {
+      this.logger.log('Aguardando cookie Traccar para WebSocket...');
+    }
     setTimeout(() => this.connect(), 3000);
   }
 
@@ -33,16 +39,19 @@ export class TraccarSocketClient implements OnModuleInit, OnModuleDestroy {
     if (this.ws) return;
 
     const cookie = this.traccarService.getSessionCookie();
-    if (!cookie) {
+    if (!cookie && !this.token) {
       this.logger.warn('Cookie Traccar não disponível, tentando novamente em 3s');
       this.reconnectTimer = setTimeout(() => this.connect(), 3000);
       return;
     }
 
     try {
-      this.ws = new WebSocket(this.baseUrl, {
-        headers: { Cookie: cookie },
-      });
+      const wsOptions: WebSocket.ClientOptions = {};
+      if (cookie) {
+        wsOptions.headers = { Cookie: cookie };
+      }
+
+      this.ws = new WebSocket(this.baseUrl, wsOptions);
 
       this.ws.on('open', () => {
         this.logger.log('Conectado ao WebSocket do Traccar');
