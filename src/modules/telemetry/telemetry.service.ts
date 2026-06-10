@@ -48,6 +48,9 @@ export class TelemetryService {
   async storeEvents(events: any[]) {
     if (!events.length) return;
 
+    const valid = events.filter((e) => e.deviceId || e.device_id);
+    if (!valid.length) return;
+
     const query = `
       INSERT INTO events (tenant_id, device_id, type, position_id, geofence_id, attributes, server_time)
       SELECT unnest($1::uuid[]), unnest($2::text[]), unnest($3::text[]),
@@ -57,15 +60,15 @@ export class TelemetryService {
     const tenantId = '00000000-0000-0000-0000-000000000000';
 
     await this.pool.query(query, [
-      events.map(() => tenantId),
-      events.map((e) => String(e.deviceId || e.device_id)),
-      events.map((e) => e.type),
-      events.map((e) => e.positionId || e.position_id || null),
-      events.map((e) => e.geofenceId || e.geofence_id || null),
-      events.map((e) => JSON.stringify(e.attributes || {})),
-      events.map((e) => (e.serverTime || new Date().toISOString())),
+      valid.map(() => tenantId),
+      valid.map((e) => String(e.deviceId || e.device_id)),
+      valid.map((e) => e.type || 'unknown'),
+      valid.map((e) => e.positionId || e.position_id || null),
+      valid.map((e) => e.geofenceId || e.geofence_id || null),
+      valid.map((e) => JSON.stringify(e.attributes || {})),
+      valid.map((e) => new Date(e.serverTime || e.server_time || new Date()).toISOString()),
     ]);
 
-    this.logger.log(`Stored ${events.length} events`);
+    this.logger.log(`Stored ${valid.length} events (${events.length - valid.length} skipped)`);
   }
 }
